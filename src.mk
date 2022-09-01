@@ -269,6 +269,8 @@ LIB_SOURCES =                                                   \
   utilities/fault_injection_fs.cc                               \
   utilities/fault_injection_secondary_cache.cc                  \
   utilities/leveldb_options/leveldb_options.cc                  \
+  utilities/DOTA/report_agent.cc								\
+  utilities/DOTA/DOTA_tuner.cc                      			\
   utilities/memory/memory_util.cc                               \
   utilities/merge_operators.cc                                  \
   utilities/merge_operators/max.cc                              \
@@ -538,6 +540,12 @@ TEST_MAIN_SOURCES =                                                     \
   monitoring/iostats_context_test.cc                                    \
   monitoring/statistics_test.cc                                         \
   monitoring/stats_history_test.cc                                      \
+  ycsbcore/acknowledged_counter_generator.cc                    		\
+  ycsbcore/basic_db.cc                                          		\
+  ycsbcore/core_workload.cc                                    		 	\
+  ycsbcore/db_factory.cc                                        		\
+  ycsbcore/measurements.cc                                      		\
+  ycsbcore/ycsbc.cc                                             		\
   options/configurable_test.cc                                          \
   options/customizable_test.cc                                          \
   options/options_settable_test.cc                                      \

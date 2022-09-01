@@ -1391,6 +1391,16 @@ struct DBOptions {
   // of the contract leads to undefined behaviors with high possibility of data
   // inconsistency, e.g. deleted old data become visible again, etc.
   bool enforce_single_del_contracts = true;
+
+
+
+  /// for FEAT
+  // This is an immutable option, that indicates the max core number we can use
+  // in the system.
+  uint64_t core_number = 20;
+  // Here is the max size of target system. It surppose to be immutable, but
+  // who knows.
+  uint64_t max_memtable_size = 512 << 20;
 };
 
 // Options to control the behavior of a database (passed to DB::Open)

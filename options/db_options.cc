@@ -758,11 +758,16 @@ ImmutableDBOptions::ImmutableDBOptions(const DBOptions& options)
       checksum_handoff_file_types(options.checksum_handoff_file_types),
       lowest_used_cache_tier(options.lowest_used_cache_tier),
       compaction_service(options.compaction_service),
-      enforce_single_del_contracts(options.enforce_single_del_contracts) {
+      enforce_single_del_contracts(options.enforce_single_del_contracts),
+      core_number(options.core_number),
+      max_memtable_size(options.max_memtable_size){
   fs = env->GetFileSystem();
   clock = env->GetSystemClock().get();
   logger = info_log.get();
   stats = statistics.get();
+
+  job_stats = std::make_shared<std::vector<QuicksandMetrics>>();
+  flush_stats = std::make_shared<std::vector<FlushMetrics>>();
 }
 
 void ImmutableDBOptions::Dump(Logger* log) const {

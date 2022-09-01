@@ -73,6 +73,7 @@
 #include "rocksdb/utilities/sim_cache.h"
 #include "rocksdb/utilities/transaction.h"
 #include "rocksdb/utilities/transaction_db.h"
+#include "rocksdb/utilities/report_agent.h"
 #include "rocksdb/write_batch.h"
 #include "test_util/testutil.h"
 #include "test_util/transaction_test_util.h"
@@ -94,6 +95,13 @@
 #include "utilities/merge_operators/sortlist.h"
 #include "utilities/persistent_cache/block_cache_tier.h"
 
+#include "ycsbcore/client.h"
+#include "ycsbcore/core_workload.h"
+#include "ycsbcore/countdown_latch.h"
+#include "ycsbcore/db_factory.h"
+#include "ycsbcore/measurements.h"
+#include "ycsbcore/timer.h"
+#include "ycsbcore/utils.h"
 #ifdef MEMKIND
 #include "memory/memkind_kmem_allocator.h"
 #endif
@@ -763,6 +771,32 @@ DEFINE_bool(show_table_properties, false,
             " stats_interval is set and stats_per_interval is on.");
 
 DEFINE_string(db, "", "Use the db with the following name.");
+// for FEAT
+DEFINE_int64(load_duration, 0, "The loading duration of YCSB");
+DEFINE_string(ycsb_workload, "", "The workload of YCSB");
+DEFINE_int64(ycsb_request_speed, 100, "The request speed of YCSB, in MB/s");
+DEFINE_int64(load_num, 100000, "Num of operations in loading phrase");
+DEFINE_int64(running_num, 100000, "Num of operations in running phrase");
+DEFINE_int64(core_num, 20, "The limit of thread number");
+DEFINE_int64(max_memtable_size, ROCKSDB_NAMESPACE::Options().max_memtable_size,
+             "The size of Max batch size");
+DEFINE_bool(DOTA_enabled, false, "Whether trigger the DOTA framework");
+DEFINE_bool(FEA_enable, false, "Trigger FEAT tuner's FEA component");
+DEFINE_bool(TEA_enable, false, "Trigger FEAT tuner's TEA component");
+DEFINE_int32(SILK_bandwidth_limitation, 200, "MBPS of disk limitation");
+DEFINE_bool(SILK_triggered, false, "Whether the SILK tuner is triggered");
+DEFINE_double(idle_rate, 1.25,
+              "TEA will decide this as the idle rate of the threads");
+DEFINE_double(FEA_gap_threshold, 1.5,
+              "The negative feedback loop's threshold");
+DEFINE_double(TEA_slow_flush, 0.5, "The negative feedback loop's threshold");
+DEFINE_double(DOTA_tuning_gap, 1.0, "Tuning gap of the DOTA agent, in secs ");
+DEFINE_int64(random_fill_average, 150,
+             "average inputs rate of background write operations");
+DEFINE_bool(detailed_running_stats, false,
+            "Whether record more detailed information in report agent");
+
+
 
 DEFINE_bool(progress_reports, true,
             "If true, db_bench will report number of finished operations.");
@@ -2020,95 +2054,6 @@ struct DBWithColumnFamilies {
   }
 };
 
-// A class that reports stats to CSV file.
-class ReporterAgent {
- public:
-  ReporterAgent(Env* env, const std::string& fname,
-                uint64_t report_interval_secs)
-      : env_(env),
-        total_ops_done_(0),
-        last_report_(0),
-        report_interval_secs_(report_interval_secs),
-        stop_(false) {
-    auto s = env_->NewWritableFile(fname, &report_file_, EnvOptions());
-    if (s.ok()) {
-      s = report_file_->Append(Header() + "\n");
-    }
-    if (s.ok()) {
-      s = report_file_->Flush();
-    }
-    if (!s.ok()) {
-      fprintf(stderr, "Can't open %s: %s\n", fname.c_str(),
-              s.ToString().c_str());
-      abort();
-    }
-
-    reporting_thread_ = port::Thread([&]() { SleepAndReport(); });
-  }
-
-  ~ReporterAgent() {
-    {
-      std::unique_lock<std::mutex> lk(mutex_);
-      stop_ = true;
-      stop_cv_.notify_all();
-    }
-    reporting_thread_.join();
-  }
-
-  // thread safe
-  void ReportFinishedOps(int64_t num_ops) {
-    total_ops_done_.fetch_add(num_ops);
-  }
-
- private:
-  std::string Header() const { return "secs_elapsed,interval_qps"; }
-  void SleepAndReport() {
-    auto* clock = env_->GetSystemClock().get();
-    auto time_started = clock->NowMicros();
-    while (true) {
-      {
-        std::unique_lock<std::mutex> lk(mutex_);
-        if (stop_ ||
-            stop_cv_.wait_for(lk, std::chrono::seconds(report_interval_secs_),
-                              [&]() { return stop_; })) {
-          // stopping
-          break;
-        }
-        // else -> timeout, which means time for a report!
-      }
-      auto total_ops_done_snapshot = total_ops_done_.load();
-      // round the seconds elapsed
-      auto secs_elapsed =
-          (clock->NowMicros() - time_started + kMicrosInSecond / 2) /
-          kMicrosInSecond;
-      std::string report =
-          std::to_string(secs_elapsed) + "," +
-          std::to_string(total_ops_done_snapshot - last_report_) + "\n";
-      auto s = report_file_->Append(report);
-      if (s.ok()) {
-        s = report_file_->Flush();
-      }
-      if (!s.ok()) {
-        fprintf(stderr,
-                "Can't write to report file (%s), stopping the reporting\n",
-                s.ToString().c_str());
-        break;
-      }
-      last_report_ = total_ops_done_snapshot;
-    }
-  }
-
-  Env* env_;
-  std::unique_ptr<WritableFile> report_file_;
-  std::atomic<int64_t> total_ops_done_;
-  int64_t last_report_;
-  const uint64_t report_interval_secs_;
-  ROCKSDB_NAMESPACE::port::Thread reporting_thread_;
-  std::mutex mutex_;
-  // will notify on stop
-  std::condition_variable stop_cv_;
-  bool stop_;
-};
 
 enum OperationType : unsigned char {
   kRead = 0,
@@ -3890,8 +3835,37 @@ class Benchmark {
 
     std::unique_ptr<ReporterAgent> reporter_agent;
     if (FLAGS_report_interval_seconds > 0) {
-      reporter_agent.reset(new ReporterAgent(FLAGS_env, FLAGS_report_file,
-                                             FLAGS_report_interval_seconds));
+      if ( FLAGS_DOTA_enabled || FLAGS_TEA_enable ||
+          FLAGS_FEA_enable) {
+        // need to use another Report Agent
+        if (FLAGS_DOTA_tuning_gap == 0) {
+          reporter_agent.reset(new ReporterAgentWithTuning(
+              reinterpret_cast<DBImpl*>(db_.db), FLAGS_env, FLAGS_report_file,
+              FLAGS_report_interval_seconds, FLAGS_report_interval_seconds));
+        } else {
+          reporter_agent.reset(new ReporterAgentWithTuning(
+              reinterpret_cast<DBImpl*>(db_.db), FLAGS_env, FLAGS_report_file,
+              FLAGS_report_interval_seconds, FLAGS_DOTA_tuning_gap));
+        }
+        auto tuner_agent =
+            reinterpret_cast<ReporterAgentWithTuning*>(reporter_agent.get());
+        tuner_agent->UseFEATTuner(FLAGS_TEA_enable, FLAGS_FEA_enable);
+        tuner_agent->GetTuner()->set_idle_ratio(FLAGS_idle_rate);
+        tuner_agent->GetTuner()->set_gap_threshold(FLAGS_FEA_gap_threshold);
+        tuner_agent->GetTuner()->set_slow_flush_threshold(FLAGS_TEA_slow_flush);
+      } else if (FLAGS_detailed_running_stats) {
+        reporter_agent.reset(new ReporterWithMoreDetails(
+            reinterpret_cast<DBImpl*>(db_.db), FLAGS_env, FLAGS_report_file,
+            FLAGS_report_interval_seconds));
+      } else if (FLAGS_SILK_triggered) {
+        reporter_agent.reset(new ReporterAgentWithSILK(
+            reinterpret_cast<DBImpl*>(db_.db), FLAGS_env, FLAGS_report_file,
+            FLAGS_report_interval_seconds, FLAGS_value_size,
+            FLAGS_SILK_bandwidth_limitation));
+      } else {
+        reporter_agent.reset(new ReporterAgent(FLAGS_env, FLAGS_report_file,
+                                               FLAGS_report_interval_seconds));
+      }
     }
 
     ThreadArg* arg = new ThreadArg[n];
@@ -4653,6 +4627,10 @@ class Benchmark {
     // a guaranteed failure when they are needed.
     options.create_missing_column_families = true;
     options.create_if_missing = true;
+
+    options.core_number = FLAGS_core_num;
+    options.max_memtable_size = FLAGS_max_memtable_size;
+
 
     if (options.statistics == nullptr) {
       options.statistics = dbstats;

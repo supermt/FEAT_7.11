@@ -11,6 +11,46 @@
 #include "rocksdb/rocksdb_namespace.h"
 
 namespace ROCKSDB_NAMESPACE {
+
+
+struct FlushMetrics {
+  uint64_t total_bytes = 0;
+  double memtable_ratio = 0.0;
+  double write_out_bandwidth = 0.0;
+  double start_time = 0.0;
+  int l0_files = 0;
+};
+
+struct QuicksandMetrics {
+  QuicksandMetrics() { Reset(); }
+  void Reset();
+  int input_level = 0;
+  int output_level = 1;
+  double drop_ratio = 0.0;
+  double write_out_bandwidth;
+  double read_in_bandwidth;
+  int max_bg_compaction;
+  int max_bg_flush;
+  double cpu_time_ratio;
+  double total_micros;
+  double write_amplification;
+  uint64_t total_bytes;
+  uint64_t current_pending_bytes;
+  int immu_num;
+  struct op_latency_nanos {
+    void Reset() {
+      prepare_latency = 0;
+      fsync_latency = 0;
+      range_latency = 0;
+      file_write_latency = 0;
+    }
+    uint64_t prepare_latency;
+    uint64_t fsync_latency;
+    uint64_t range_latency;
+    uint64_t file_write_latency;
+  } io_stat;
+};
+
 struct CompactionJobStats {
   CompactionJobStats() { Reset(); }
   void Reset();

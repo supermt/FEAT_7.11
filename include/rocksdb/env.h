@@ -675,7 +675,17 @@ class Env : public Customizable {
   const std::shared_ptr<SystemClock>& GetSystemClock() const;
 
   // If you're adding methods here, remember to add them to EnvWrapper too.
-
+  
+  
+  // for FEAT usage
+ 
+  virtual std::string GetThreadPoolTimeStateString() {
+    return "haven't been implemented";
+  }
+  virtual std::vector<std::pair<size_t, uint64_t>>* GetThreadPoolWaitingTime(
+      Env::Priority /*priority*/) {
+    return nullptr;
+  }
  protected:
   // The pointer to an internal structure that will update the
   // status of each thread.
@@ -1665,6 +1675,7 @@ class EnvWrapper : public Env {
                                const std::string& header) const override;
 #endif  // ROCKSDB_LITE
 
+  
  private:
   Target target_;
 };
