@@ -147,6 +147,12 @@ LIB_SOURCES =                                                   \
   monitoring/thread_status_updater_debug.cc                     \
   monitoring/thread_status_util.cc                              \
   monitoring/thread_status_util_debug.cc                        \
+  ycsbcore/acknowledged_counter_generator.cc                    		\
+  ycsbcore/basic_db.cc                                          		\
+  ycsbcore/core_workload.cc                                    		 	\
+  ycsbcore/db_factory.cc                                        		\
+  ycsbcore/measurements.cc                                      		\
+  ycsbcore/ycsbc.cc                                             		\
   options/cf_options.cc                                         \
   options/configurable.cc                                       \
   options/customizable.cc                                       \
@@ -540,12 +546,6 @@ TEST_MAIN_SOURCES =                                                     \
   monitoring/iostats_context_test.cc                                    \
   monitoring/statistics_test.cc                                         \
   monitoring/stats_history_test.cc                                      \
-  ycsbcore/acknowledged_counter_generator.cc                    		\
-  ycsbcore/basic_db.cc                                          		\
-  ycsbcore/core_workload.cc                                    		 	\
-  ycsbcore/db_factory.cc                                        		\
-  ycsbcore/measurements.cc                                      		\
-  ycsbcore/ycsbc.cc                                             		\
   options/configurable_test.cc                                          \
   options/customizable_test.cc                                          \
   options/options_settable_test.cc                                      \
