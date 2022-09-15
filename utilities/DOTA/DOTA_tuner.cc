@@ -87,8 +87,11 @@ SystemScores DOTA_Tuner::ScoreTheSystem() {
       cfd->imm() == nullptr ? 0 : cfd->imm()->NumNotFlushed();
 
   std::vector<FlushMetrics> flush_metric_list;
+
   auto flush_result_length =
       running_db_->immutable_db_options().flush_stats->size();
+
+
   auto compaction_result_length =
       running_db_->immutable_db_options().job_stats->size();
 
@@ -99,13 +102,7 @@ SystemScores DOTA_Tuner::ScoreTheSystem() {
     flush_metric_list.push_back(temp);
     current_score.flush_speed_avg += temp.write_out_bandwidth;
     current_score.disk_bandwidth += temp.total_bytes;
-    if (i > 1)
-      current_score.flush_gap_time +=
-          (temp.start_time - flush_list_from_opt_ptr->at(i - 1).start_time);
-
     last_non_zero_flush = temp.write_out_bandwidth;
-    //        (double)(current_opt.write_buffer_size >> 20) /
-    //                                 (current_score.memtable_speed + 1);
     if (current_score.l0_num > temp.l0_files) {
       current_score.l0_num = temp.l0_files;
     }
@@ -154,13 +151,16 @@ SystemScores DOTA_Tuner::ScoreTheSystem() {
     current_score.l0_drop_ratio /= l0_compaction;
   }
   // l0_num
+
   current_score.l0_num = (double)(vfs->NumLevelFiles(vfs->base_level())) /
                          current_opt.level0_slowdown_writes_trigger;
-  current_score.l0_num = l0_compaction == 0 ? current_score.l0_num : 0;
+  //std::cout << "currenct score, l0 number" << current_score.l0_num <<std::endl;
+  //  current_score.l0_num = l0_compaction == 0 ? current_score.l0_num : 0;
   // disk bandwidth,estimate_pending_bytes ratio
   current_score.disk_bandwidth /= kMicrosInSecond;
+
   current_score.estimate_compaction_bytes =
-      (double)max_pending_bytes /
+      (double)vfs->estimated_compaction_needed_bytes() /
       current_opt.soft_pending_compaction_bytes_limit;
 
   auto flush_thread_idle_list = *env_->GetThreadPoolWaitingTime(Env::HIGH);
@@ -260,20 +260,6 @@ inline void DOTA_Tuner::SetBatchSize(std::vector<ChangePoint> *change_list,
   // adjust the memtable size
   memtable_size_cp.db_width = false;
   memtable_size_cp.opt = memtable_size;
-
-  //  int flush_slots = std::ceil((double)current_opt.max_background_jobs / 5);
-
-  //  write_buffer_number.opt = memtable_number;
-  //  write_buffer_number.db_width = false;
-  //  uint64_t allowed_max_memtable_size;
-  // adjust the number of memtable size, and controls the total size of Cm won't
-  // exceed
-  //  write_buffer_number.value = std::to_string(flush_slots + 1);
-  //  allowed_max_memtable_size =
-  //      ((max_memtable_size * default_opts.max_write_buffer_number) >> 20) /
-  //      (flush_slots + 1);
-  //
-  //  allowed_max_memtable_size = allowed_max_memtable_size << 20;
 
   target_value = std::max(target_value, min_memtable_size);
   target_value = std::min(target_value, max_memtable_size);
@@ -396,8 +382,8 @@ FEAT_Tuner::~FEAT_Tuner() = default;
 void FEAT_Tuner::DetectTuningOperations(int /*secs_elapsed*/,
                                         std::vector<ChangePoint> *change_list) {
   //   first, we tune only when the flushing speed is slower than before
-  //  UpdateSystemStats();
   auto current_score = this->ScoreTheSystem();
+  if (current_score.flush_speed_avg == 0) return ;
   scores.push_back(current_score);
   if (scores.size() == 1) {
     return;
@@ -410,26 +396,29 @@ void FEAT_Tuner::DetectTuningOperations(int /*secs_elapsed*/,
   CalculateAvgScore();
 
   current_score_ = current_score;
+  
+//  std::cout << current_score_.flush_speed_avg<< std::endl;
+
+
   //  std::cout << current_score_.memtable_speed << "/" <<
   //  avg_scores.memtable_speed
   //            << std::endl;
 
-  if (current_score_.memtable_speed < avg_scores.memtable_speed * 0.5 &&
-      current_score_.immutable_number >= 1) {
-    //<=avg_scores.memtable_speed * TEA_slow_flush) {
-    if (current_score.flush_speed_avg == 0 && current_score.memtable_speed > 0)
-      return;
-    TuningOP result{kKeep, kKeep};
-    if (TEA_enable) {
+   //<=avg_scores.memtable_speed * TEA_slow_flush) {
+
+  if (current_score_.flush_speed_avg >0 ){
+   TuningOP result{kKeep, kKeep};
+   if (TEA_enable) {
       result = TuneByTEA();
-    }
+   }
     if (FEA_enable) {
       TuningOP fea_result = TuneByFEA();
       result.BatchOp = fea_result.BatchOp;
     }
     FillUpChangeList(change_list, result);
+
   }
-}
+ }
 
 SystemScores FEAT_Tuner::normalize(SystemScores &origin_score) {
   return origin_score;
@@ -438,37 +427,21 @@ SystemScores FEAT_Tuner::normalize(SystemScores &origin_score) {
 TuningOP FEAT_Tuner::TuneByTEA() {
   // the flushing speed is low.
   TuningOP result{kKeep, kKeep};
-//  if (current_score_.immutable_number >= 1) {
-//    result.ThreadOp = kLinearIncrease;
-//  }
-
-  std::cout << "max fs:" << max_scores.flush_speed_avg <<"current fs:" << current_score_.flush_speed_avg << "current_idle rate :" << current_score_.compaction_idle_time <<std::endl;
-
-  if (current_score_.flush_speed_avg ==0){
-
+ 
+  if (current_score_.immutable_number >= 1){
     result.ThreadOp = kLinearIncrease;
   }
 
-
-   if (current_score_.flush_speed_avg < max_scores.flush_speed_avg * TEA_slow_flush && current_score_.flush_speed_avg > 0 ) {
+  if (current_score_.flush_speed_avg < max_scores.flush_speed_avg * TEA_slow_flush && current_score_.flush_speed_avg > 0 ) {
     result.ThreadOp = kHalf;
     std::cout << "slow flush, decrease thread" << std::endl;
   }
 
-   if (current_score_.estimate_compaction_bytes >= 1 || current_score_.l0_num >=1) {
+
+  if (current_score_.estimate_compaction_bytes >= 1 || current_score_.l0_num >= 1) {
     result.ThreadOp = kLinearIncrease;
     std::cout << "lo/ro increase, thread" << std::endl;
   }
-
-
-  if (current_score_.compaction_idle_time > idle_threshold) {
-    result.ThreadOp = kHalf;
-    std::cout << "idle threads, decrease thread" << std::endl;
-  }
-
-  //
-  //  std::cout << current_score_.flush_speed_avg << "/"
-  //            << avg_scores.flush_speed_avg << std::endl;
 
   return result;
 }
@@ -476,23 +449,23 @@ TuningOP FEAT_Tuner::TuneByTEA() {
 TuningOP FEAT_Tuner::TuneByFEA() {
   TuningOP negative_protocol{kKeep, kKeep};
 
-  if (current_score_.memtable_speed >
-          current_score_.flush_speed_avg * TEA_slow_flush ||
+  if (current_score_.flush_speed_avg <
+          max_scores.flush_speed_avg * TEA_slow_flush ||
       current_score_.immutable_number > 1) {
     negative_protocol.BatchOp = kLinearIncrease;
     std::cout << "slow flushing, increase batch" << std::endl;
+  }
+
+  if (current_score_.immutable_number == 0){
+     negative_protocol.BatchOp = kLinearIncrease;
+     std::cout << "no flushing, decrease batch" << std::endl;
+  
   }
 
   if (current_score_.estimate_compaction_bytes >= 1) {
     negative_protocol.BatchOp = kHalf;
     std::cout << "ro, decrease batch" << std::endl;
   }
-
-  if (current_score_.l0_num >= 1) {
-    negative_protocol.BatchOp = kLinearIncrease;
-    std::cout << "lo, increase  batch" << std::endl;
-  }
-
   return negative_protocol;
 }
 void FEAT_Tuner::CalculateAvgScore() {
