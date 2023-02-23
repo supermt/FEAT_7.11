@@ -1,31 +1,58 @@
-## RocksDB: A Persistent Key-Value Store for Flash and RAM Storage
+# ADOC: Automatic Data Overflow Control
 
-[![CircleCI Status](https://circleci.com/gh/facebook/rocksdb.svg?style=svg)](https://circleci.com/gh/facebook/rocksdb)
-[![Appveyor Build status](https://ci.appveyor.com/api/projects/status/fbgfu0so3afcno78/branch/main?svg=true)](https://ci.appveyor.com/project/Facebook/rocksdb/branch/main)
-[![PPC64le Build Status](http://140-211-168-68-openstack.osuosl.org:8080/buildStatus/icon?job=rocksdb&style=plastic)](http://140-211-168-68-openstack.osuosl.org:8080/job/rocksdb)
+> This is the implementation of the [paper](https://www.usenix.org/conference/fast23/presentation/yu) published on the conference FAST'23.
 
-RocksDB is developed and maintained by Facebook Database Engineering Team.
-It is built on earlier work on [LevelDB](https://github.com/google/leveldb) by Sanjay Ghemawat (sanjay@google.com)
-and Jeff Dean (jeff@google.com)
+## Mofications:
 
-This code is a library that forms the core building block for a fast
-key-value server, especially suited for storing data on flash drives.
-It has a Log-Structured-Merge-Database (LSM) design with flexible tradeoffs
-between Write-Amplification-Factor (WAF), Read-Amplification-Factor (RAF)
-and Space-Amplification-Factor (SAF). It has multi-threaded compactions,
-making it especially suitable for storing multiple terabytes of data in a
-single database.
+Here are the modified files:
 
-Start with example usage here: https://github.com/facebook/rocksdb/tree/main/examples
+1. YCSB workload generator
+    - ycsbcore/*
+2. Extended reporter agent
+    - include\rocksdb\utilities\DOTA_tuner.h
+    - include\rocksdb\utilities\report_agent.h
+    - utilities\DOTA\DOTA_tuner.cc
+    - utilities\DOTA\report_agent.cc
+3. Option files to configure the ADOC tuner
+    - options.h
+4. Metrics collection in files:
+    - This is actually part of the featrue to quantalize the flow and predict the overflowing (**work in progress**)
 
-See the [github wiki](https://github.com/facebook/rocksdb/wiki) for more explanation.
+## How to use?
 
-The public interface is in `include/`.  Callers should not include or
-rely on the details of any other header files in this package.  Those
-internal APIs may be changed without warning.
+For now, you can only use it inside db_bench_tool.cc, but we will publish a black box version later. 
 
-Questions and discussions are welcome on the [RocksDB Developers Public](https://www.facebook.com/groups/rocksdb.dev/) Facebook group and [email list](https://groups.google.com/g/rocksdb) on Google Groups.
+But don't worry, you can always transplant it, since the tuner logic is simple enough, and has been implemented inside the reporter agent, which is a benchmark counter. 
 
-## License
 
-RocksDB is dual-licensed under both the GPLv2 (found in the COPYING file in the root directory) and Apache 2.0 License (found in the LICENSE.Apache file in the root directory).  You may select, at your option, one of the above-listed licenses.
+**Differences betwen the advisor script in tools/advisor**
+
+*+* ADOC is an online tuning framework, while the advisor is an offline tuning framework, which gives the tuning operation based on the execution LOG of _db_bench_.
+
+*+* ADOC collects data directly from the DB pointer, while the advisor reads the occurrence from the LOG. 
+
+
+## What's next?
+
+### Make it a black box
+
+> We are going to provide the ADOC as a black box, all you need to do is to enable it in the db_option
+
+> We are also going to implement it outside rocksdb, in this case, you only need a DB pointer to perform online tuning
+
+### Predict and pre-tuning based on quantitative 
+
+This is actually a work-in-progress, offline training can be very expensive, but the AIMD method is event-driven, it could be a more economic way to do that, and great thanks to the questioner **Chun Liu** from FutureWei. 
+s
+
+### DOTA Project
+
+DOTA: Device-oriented Tuning Advisor
+
+![DOTA Project](architecture.png)
+
+This can be a project help deploying LSM-KV into production environments, especially the heterogeneous environments. ADOC is the one that performs tuning operations on the thread pool. (Batch size tuning is used to balance the effect of thread tuning, we've explained that in the end of Evaluation section.)
+
+If you are interested in, we are always looking for collaborations.
+
+> BUT I'm not sure when can I start the next round of developement. Since it's not part of my thesis, but still, I will try to make some progress on it.

@@ -456,12 +456,6 @@ TuningOP FEAT_Tuner::TuneByFEA() {
     std::cout << "slow flushing, increase batch" << std::endl;
   }
 
-  if (current_score_.immutable_number == 0){
-     negative_protocol.BatchOp = kLinearIncrease;
-     std::cout << "no flushing, decrease batch" << std::endl;
-  
-  }
-
   if (current_score_.estimate_compaction_bytes >= 1) {
     negative_protocol.BatchOp = kHalf;
     std::cout << "ro, decrease batch" << std::endl;
