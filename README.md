@@ -24,6 +24,27 @@ For now, you can only use it inside db_bench_tool.cc, but we will publish a blac
 
 But don't worry, you can always transplant it, since the tuner logic is simple enough, and has been implemented inside the reporter agent, which is a benchmark counter. 
 
+### To compile 
+
+Thanks for the feedback from [Yemaoxin](23020221154137@stu.xmu.edu.cn).
+
+I have not updated the CMakeList yet, please compile it with `make` command in the home directory:
+
+`make db_bench -j4`
+
+### To Enable
+
+Also thanks for the feedback from [Yemaoxin](23020221154137@stu.xmu.edu.cn).
+
+You can find the `FEA_enable`, `TEA_enable` in the start up parameters.
+
+- To run ADOC-T, use `--TEA_enable=true, --FEA_enable=false`
+- To run ADOC-B, use `--TEA_enable=false, --FEA_enable=true`
+- To run ADOC, use `--TEA_enable=true, --FEA_enable=true`
+
+### Evaluation tool
+
+You can look at this [repo](https://github.com/supermt/ADOC-Rocks-tracker.git), which is a RocksDB evaluation tool used in this paper.
 
 **Differences betwen the advisor script in tools/advisor**
 
@@ -56,3 +77,18 @@ This can be a project help deploying LSM-KV into production environments, especi
 If you are interested in, we are always looking for collaborations.
 
 > BUT I'm not sure when can I start the next round of developement. Since it's not part of my thesis, but still, I will try to make some progress on it.
+
+
+
+### **About SILK**
+
+The SILK implementation in this repo is a placeholder, since we failed to reproduce the read performance as mentioned in its paper. Please download it from the [original github repo](https://github.com/theoanab/SILK-USENIXATC2019)
+
+You may find the GET() operation in SILK is super fast.
+> In the original design, it suppose further search through deeper levels, while SILK directly return a `retry` status. 
+
+> GetImpl() in SILK
+![SILK Get](SILK_Get.png)
+> GetImpl() in RocksDB
+![RocksDB Get](rocksdb_get.png)
+
